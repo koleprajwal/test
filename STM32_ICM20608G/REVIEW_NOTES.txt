@@ -1,0 +1,7 @@
+Review notes for uploaded generated files:
+- main.c: peripheral initialization was present but the main loop was empty; no IMU setup/read/transfer occurred.
+- I2C1 config already uses 400 kHz and 7-bit addressing.
+- TIM2 prescaler 7199 / period 99 is 100 Hz if timer clock is 72 MHz; timer was never started.
+- stm32f1xx_hal_msp.c configures PB6/PB7 as AF open-drain and enables I2C1 clock. No manual pin toggle is needed.
+- stm32f1xx_it.c has TIM2 and DMA IRQ dispatch already wired to HAL.
+- UART1 MSP maps PA9 TX and PA10 RX. ST-LINK is not a serial data interface; use USB-to-TTL for the PC stream.
