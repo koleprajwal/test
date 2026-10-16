@@ -1,0 +1,66 @@
+I reviewed the actual main.c, Python plotting script, and the configuration details from your uploaded STM32CubeIDE project.
+My verdict: the code needs a few changes before I would recommend relying on it. The overall architecture is correct, but there are issues worth fixing before you flash it to your STM32F103C8T6.
+1. Code review results
+Component	Result	What needs attention
+I²C1 at 400 kHz	Correct configuration	Verify actual wiring and pull-ups
+PB6 / PB7	Correct	Already configured by HAL; no manual pin enabling needed
+ICM-20608-G initialization	Mostly correct	Verify the device responds with the expected ID
+14-byte sensor read	Correct structure	Reads accelerometer, temperature and gyroscope
+TIM2 at 100 Hz	Correct for a 72 MHz timer clock	Sampling can slip if the main loop falls behind
+UART transmission	Correct architecture	Floating-point formatting may need enabling
+Python plotting	Generally correct	Confirm the serial baud rate and actual data stream
+3D step mapping	Not implemented	This firmware only streams raw sensor measurements
+The important distinction is that 400 kHz is the I²C bus speed, while 100 Hz is the intended data acquisition and transmission rate. These are separate settings.
+2. Change the floating-point output handling
+Your firmware formats sensor values using statements such as:
+snprintf(line, sizeof(line),
+         "%lu,%.5f,%.5f,%.5f,%.4f,%.4f,%.4f,%.2f\r\n",
+         (unsigned long)timestamp, ax, ay, az, gx, gy, gz, temp_c);
+
+
+The problem is that STM32CubeIDE projects commonly use the size-optimized C library, which may not include floating-point support for printf/snprintf by default.
+Required action: Open Project Properties and check the linker settings. If the project uses Newlib Nano without floating-point formatting enabled, add this linker option:
+-u _printf_float
+
+
+Then rebuild the project. Without this support, the program may compile but the decimal sensor readings may not be formatted correctly.
+3. Improve the sensor sampling configuration
+Your current code sets:
+ICM20608_WriteReg(ICM_REG_SMPLRT_DIV, 9U);
+
+
+With the configured digital low-pass filter, this sets the nominal sensor output rate to 100 Hz.
+However, TIM2 also reads the sensor at 100 Hz. The two clocks are not synchronized, so occasional repeated or skipped sensor samples are possible.
+For more reliable 100 Hz host acquisition, I recommend changing this to:
+ICM20608_WriteReg(ICM_REG_SMPLRT_DIV, 0U);
+
+
+This configures the nominal sensor output rate to 1 kHz with the selected filter settings, while TIM2 continues to read and transmit at 100 Hz. The laptop still receives data at the intended rate.
+Make this change in ICM20608_Init(), retaining the existing 10 ms timer interval.
+4. Verify the timer and data transfer
+Your TIM2 configuration is correct if the system clock is 72 MHz and APB1 is divided by two:
+- Timer prescaler: 7199
+- Timer period: 99
+- Interrupt frequency: 100 Hz
+- Target interval: 10 ms
+The timer interrupt should only set the sampling flag. The I²C read and UART transmission should remain in the main loop, as they currently do.
+One limitation remains: sample_due is a single flag, not a queue. If the main loop takes longer than 10 ms, timer events can be missed. The existing workload should be tested to confirm it consistently completes within the interval. If you require guaranteed timing, use buffered acquisition and non-blocking transmission.
+5. Check the physical connections
+ICM-20608-G → STM32F103C8T6
+Signal	Pin
+SDA	PB7
+SCL	PB6
+GND	GND
+AD0	GND for address 0x68
+STM32 → laptop
+Signal	Connection
+PA9 / USART1 TX	USB-to-TTL adapter RX
+GND	Adapter GND
+
+Use appropriate 3.3 V logic and verify the breakout board's power requirements. The sensor's I²C pins are enabled through your existing HAL initialization; no additional GPIO toggling code is needed.
+Final recommendation
+Before using the code for your step-mapping project, make these two changes first:
+1. Enable floating-point formatting if your linker configuration does not already support it.
+2. Set the sensor sample-rate divider to zero while retaining TIM2's 100 Hz sampling schedule.
+Then build the project, flash it using ST-LINK, and verify the sensor ID and actual output using the Python plotter.
+I have reviewed the code logic, but I have not run a hardware test or confirmed a successful build with your exact CubeIDE toolchain. These changes improve the configuration; they are not proof that the physical setup is working.
