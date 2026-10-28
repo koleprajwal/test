@@ -1,0 +1,102 @@
+I reviewed the actual main.c you downloaded, your original CubeMX-generated files, the separate driver files in the ZIP bundle, and the Python COM5 plotter.
+
+My verdict: the code is a reasonable starting point, but I would not call it complete or ready to trust on your hardware yet. I found several real limitations, including missing accelerometer calibration and a 3D trajectory algorithm that can give misleading results.
+1. Problems in main.c
+1. Accelerometer calibration is missing
+Important
+Calibrate_Gyro() estimates only the three gyroscope biases. It does not calculate accelerometer offsets or correct accelerometer scale errors. The step detector assumes the acceleration magnitude is approximately 1 g when stationary, so accelerometer bias can shift the detection signal and affect step-count accuracy.
+
+
+
+2. Step detection is not guaranteed to count exactly once per real step
+Important
+The detector uses acceleration magnitude, a peak threshold of 0.18 g, a re-arm threshold of 0.07 g, and a minimum interval of 280 ms. These are starting values, not validated settings for your toe mounting.
+
+A sharp impact can still be counted as a step, and some genuine steps may be missed. The algorithm needs recorded walking data and testing before its accuracy can be claimed.
+
+
+
+3. The timer flag can lose samples
+
+The timer interrupt sets sample_due = 1. If another interrupt arrives before the main loop consumes the flag, the code increments missed_samples and loses that sample event.
+
+This is acceptable as a basic scheduling mechanism, but the missed-sample count is never transmitted or reported. A slow I2C transaction can therefore create gaps in your data without making them obvious.
+
+
+
+4. Startup calibration can wait indefinitely if reads keep failing
+
+The calibration loop increments its sample index only when an I2C read succeeds. If the sensor disconnects or communication remains faulty, it can remain in the loop indefinitely.
+
+Add a total calibration timeout and a clear error status so you can diagnose the failure instead of having the board appear frozen.
+
+
+
+5. Floating-point UART formatting needs verification
+
+The firmware uses snprintf() with %f format specifiers. If your CubeIDE project uses Newlib Nano without floating-point printf support enabled, the sensor values may not be formatted correctly.
+
+Verify the actual UART output before debugging the sensor or plotting code. If needed, enable -u _printf_float in the linker settings.
+
+
+
+2. What is correct in the firmware?
+Not everything needs to be rewritten. Several parts are sensible.
+Item	Review result
+ICM-20608-G device ID	0xAF is the documented WHO_AM_I value.  invensense.tdk.com+1
+I2C address	0x68 is correct if AD0 is low; use 0x69 if AD0 is high.
+Accelerometer conversion	Dividing raw values by 16384.0 is correct for ±2 g.
+Gyroscope conversion	Dividing raw values by 65.5 is correct for ±500°/s.
+Timer configuration	Prescaler 7199, period 199 gives 50 Hz when TIM2 receives a 72 MHz clock.
+UART format	The firmware sends eight comma-separated fields, matching the Python parser.
+Timer ISR	It schedules work rather than performing I2C reads and UART transmission inside the interrupt.
+UART DMA	The completion callback releases the busy flag, allowing subsequent transmissions.
+
+One important qualification: these are checks of the code and configuration, not proof that the physical sensor communicates successfully or that the project compiles with your exact CubeIDE device pack.
+3. Problems in the Python 3D plotter
+The plotting script has a more fundamental limitation than the firmware.
+Heading is estimated from gyro Z only
+
+The script integrates gz_dps to estimate heading. This assumes the sensor's Z axis corresponds to the required rotation axis. Since your IMU is attached to your toes, that assumption may be false as the foot rotates.
+
+
+
+Stair height is guessed, not measured
+
+The code adds or subtracts a fixed 0.16 m based on an instantaneous pitch threshold of 18°. That does not reliably distinguish ascending stairs, descending stairs, toe movement, or ordinary walking.
+
+
+
+The horizontal path uses a fixed stride length
+
+Every detected step moves the plotted position by 0.65 m, regardless of your actual stride, speed, or direction. You can change this parameter, but doing so does not make the path an accurate position measurement.
+
+
+
+Large count jumps can be lost in the plotted path
+
+If the reported step count increases by more than ten between plot updates, the script draws at most ten path segments and then updates its stored count to the latest value. The displayed path can therefore fall behind the actual step count.
+
+
+
+The PC can display a useful visualization, but the current script cannot reliably show exactly where you walked or the actual height of each staircase. That requires a better orientation estimate, gait or foot-stance constraints, and appropriate calibration.
+4. Are the other uploaded files compatible?
+Your original stm32f3xx_it.c already contains the TIM2 interrupt handler and USART1/DMA handlers needed by the single-file firmware. You do not need to duplicate those handlers inside main.c.
+
+Your original stm32f3xx_hal_msp.c configures:
+- I2C1 on PB6/PB7
+- USART1 on PA9/PA10
+- DMA1 channels 2, 3, and 4 for I2C and UART
+Those settings are consistent with the peripherals used by the firmware, assuming the corresponding CubeMX configuration remains enabled.
+
+The other support files (syscalls.c, sysmem.c, and system_stm32f3xx.c) do not need changes for the step-detection algorithm itself.
+5. What I would fix before calling this complete
+Here is the order I recommend:
+1. Add calibration safeguards: calculate gyro bias, implement accelerometer calibration appropriate to the sensor's orientation, and time out if calibration fails.
+2. Improve step detection: use a properly tested peak state machine with thresholds, re-arming, and duplicate suppression validated against toe-mounted data.
+3. Make sampling failures visible: report missed samples and sensor communication errors over UART, and verify the actual 50 Hz rate.
+4. Verify serial formatting: confirm that all six sensor values are transmitted as valid numbers on COM5.
+5. Improve the PC trajectory estimate: separate heading estimation, step-length estimation, and stair detection instead of treating a fixed stride and fixed stair height as measured coordinates.
+Bottom line: your single-file main.c structure is workable, and the timer/UART architecture is reasonable. The main weaknesses are incomplete calibration, unvalidated step-detection thresholds, missing error reporting, and an unreliable 3D position estimate. I have reviewed the source, but I have not compiled it against your exact CubeIDE project or tested it on the hardware, so I cannot honestly guarantee that there are no build or runtime errors.
+
+The next sensible step is to correct those issues in one revised main.c while keeping the existing interrupt and MSP files intact, then validate the build and UART output before testing walking and stairs.
