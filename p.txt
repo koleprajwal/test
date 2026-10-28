@@ -197,3 +197,8 @@ Before you flash it
 5. If the firmware fails during initialization, check the ICM-20608-G I2C address and WHO_AM_I response before changing the error checks.
 6. If your UART output does not show decimal sensor values, enable floating-point printf support in the linker settings (-u _printf_float).
 Important: The code has been assembled into one file, but I have not compiled it against your exact CubeIDE project or tested it on your physical board. You must verify the build and sensor response first. The step thresholds also require real toe-mounted walking tests.
+
+
+
+
+https://chatgpt.com/share/6ae15956-2d58-83e8-92a0-78d6332000af
