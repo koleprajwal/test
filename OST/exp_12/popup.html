@@ -1,0 +1,27 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Notes</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Quick Notes</h1>
+    <p>Write a short note and save it in this browser.</p>
+
+    <textarea id="note" rows="6"
+      placeholder="Type your note here..."></textarea>
+
+    <div class="buttons">
+      <button id="save">Save Note</button>
+      <button id="clear" class="secondary">Clear Note</button>
+    </div>
+
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

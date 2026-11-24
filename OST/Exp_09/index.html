@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Math Library Test</title>
+</head>
+<body>
+    <h2>Simple Math Library</h2>
+
+    <p id="result"></p>
+
+    <script src="math-utils.js"></script>
+
+    <script>
+        document.getElementById("result").innerHTML =
+            "Addition: " + SimpleMath.add(10, 5) + "<br>" +
+            "Subtraction: " + SimpleMath.subtract(10, 5) + "<br>" +
+            "Multiplication: " + SimpleMath.multiply(10, 5) + "<br>" +
+            "Division: " + SimpleMath.divide(10, 5);
+    </script>
+</body>
+</html>
